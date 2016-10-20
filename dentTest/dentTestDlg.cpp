@@ -29,7 +29,7 @@ CdentTestDlg::CdentTestDlg(CWnd* pParent /*=NULL*/)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_srcImg = NULL;
-	m_dstImg = NULL;
+	m_colorImg = NULL;
 	m_rectRoi = cvRect(0,0,0,0);
 }
 
@@ -298,8 +298,8 @@ void CdentTestDlg::OnBnClickedLoadpic()
 	m_srcImg = cvLoadImage(ptxtTemp, CV_LOAD_IMAGE_COLOR );    // 读取图片
 	if( !m_srcImg )                                    // 判断是否成功载入图片
 		return;
-	if( m_dstImg )                                // 对上一幅显示的图片数据清零
-		cvZero( m_dstImg);
+	if( m_colorImg )                                // 对上一幅显示的图片数据清零
+		cvZero( m_colorImg);
 	delete[] ptxtTemp;  
 
 
@@ -366,7 +366,7 @@ void CdentTestDlg::action()
 	HObject  ho_ImageResult, ho_RegionDynThresh, ho_ConnectedRegions;
 	HObject  ho_SelectedRegions, ho_RegionUnion, ho_RegionClosing;
 	HObject  ho_ConnectedRegions1, ho_SelectedRegions1, ho_ObjectSelected;
-	HObject  ho_Contours, ho_Circle;
+	HObject  ho_Contours, ho_Circle,ho_RegionDilation;
 
 	// Local control variables
 	HTuple  hv_Width, hv_Height, hv_Sigma1, hv_Sigma2;
@@ -384,20 +384,19 @@ void CdentTestDlg::action()
 	IplImage * pImage = cvCreateImage(cvSize(grayImg->roi->width,grayImg->roi->height),IPL_DEPTH_8U,1);
 	cvCopy(grayImg,pImage);
 	cvResetImageROI(grayImg);
+	cvReleaseImage(&grayImg);
 
 	int height=pImage->height;
 	int width=pImage->width;
 	uchar *dataGray=new uchar[width*height];
-	for(int i=0; i<height; i++)
+	for(int i=0; i<height; i++)		//格式转换
 	{
 		memcpy(dataGray+width*i, pImage->imageData+pImage->widthStep*i,width);
 	}
 	GenImage1(&ho_Image,"byte",pImage->width,pImage->height,(Hlong)(dataGray));
 	delete[ ] dataGray;
+	cvReleaseImage(&pImage);
 
-	//HImage ho_Image("byte",cvImg->width,cvImg->height,cvImg->imageData);
-	//ReadImage(&ho_Image, "C:/Users/lenovo/Desktop/压痕20160423/测试4/孔4.bmp");
-	cvShowImage("roi",pImage);
 	//获取图片尺寸
 	GetImageSize(ho_Image, &hv_Width, &hv_Height);
 
@@ -496,10 +495,10 @@ void CdentTestDlg::action()
 		m_rectRoi = cvRect(0,0,0,0);
 		return;
 	}
-
+	DilationCircle(ho_ObjectSelected,&ho_RegionDilation,1.5);
 	//下面这两句是圆拟合
 	//根据得到的压痕区域，提取他的边缘轮廓
-	GenContourRegionXld(ho_ObjectSelected, &ho_Contours, "border");
+	GenContourRegionXld(ho_RegionDilation, &ho_Contours, "border");
 	//边缘轮廓圆拟合，得到半径 Radius
 	FitCircleContourXld(ho_Contours, "algebraic", -1, 0, 0, 3, 2, &hv_Row1, &hv_Column1, 
 		&hv_Radius, &hv_StartPhi, &hv_EndPhi, &hv_PointOrder);
@@ -508,6 +507,7 @@ void CdentTestDlg::action()
 	GenCircle(&ho_Circle, hv_Row1, hv_Column1, hv_Radius);
 
 	m_diameter = 2*hv_Radius[0].D()*m_accuracy;
+	
 	cvCircle(m_srcImg, cvPoint(m_rectRoi.x + hv_Column1[0].D(),m_rectRoi.y + hv_Row1[0].D()),hv_Radius[0].D(),CV_RGB(255,0,0));
 
 	m_rectRoi = cvRect(0,0,0,0);
@@ -529,6 +529,7 @@ void CdentTestDlg::OnBnClickedRadio1()
 {
 	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
 	m_auto = TRUE;
+	Invalidate();
 }
 
 
@@ -536,4 +537,5 @@ void CdentTestDlg::OnBnClickedRadio2()
 {
 	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
 	m_auto = FALSE;
+	Invalidate();
 }

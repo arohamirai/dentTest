@@ -26,7 +26,7 @@ public:
 
 public:
 	IplImage *m_srcImg;
-	IplImage *m_dstImg;
+	IplImage *m_colorImg;
 	CvRect m_rectROI;
 	
 	
