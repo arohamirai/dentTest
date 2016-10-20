@@ -519,9 +519,9 @@ void CdentTestDlg::OnEnKillfocusEdit1()
 {
 	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
 	UpdateData(TRUE);
-	CString str;
-	str.Format(_T("%f"),m_accuracy);
-	MessageBox(str);
+	//CString str;
+	//str.Format(_T("%f"),m_accuracy);
+	//MessageBox(str);
 }
 
 
