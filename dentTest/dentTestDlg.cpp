@@ -23,17 +23,21 @@ using namespace HalconCpp;
 
 CdentTestDlg::CdentTestDlg(CWnd* pParent /*=NULL*/)
 	: CDialogEx(CdentTestDlg::IDD, pParent)
-	, m_accuracy(0)
+	, m_accuracy(0.05)
+	, m_diameter(0)
+	, m_auto(TRUE)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 	m_srcImg = NULL;
 	m_dstImg = NULL;
+	m_rectRoi = cvRect(0,0,0,0);
 }
 
 void CdentTestDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Text(pDX,IDC_EDIT1,m_accuracy);
+	DDX_Text(pDX,IDC_EDIT2,m_diameter);
 }
 
 BEGIN_MESSAGE_MAP(CdentTestDlg, CDialogEx)
@@ -44,6 +48,8 @@ BEGIN_MESSAGE_MAP(CdentTestDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_LOADPIC, &CdentTestDlg::OnBnClickedLoadpic)
 	ON_BN_CLICKED(IDC_MEASURE, &CdentTestDlg::OnBnClickedMeasure)
 	ON_EN_KILLFOCUS(IDC_EDIT1, &CdentTestDlg::OnEnKillfocusEdit1)
+	ON_BN_CLICKED(IDC_RADIO1, &CdentTestDlg::OnBnClickedRadio1)
+	ON_BN_CLICKED(IDC_RADIO2, &CdentTestDlg::OnBnClickedRadio2)
 END_MESSAGE_MAP()
 
 
@@ -60,8 +66,10 @@ BOOL CdentTestDlg::OnInitDialog()
 
 	// TODO: 在此添加额外的初始化代码
 	CWnd *pWnd = GetDlgItem(IDC_PICTURE);
-	pWnd->SetWindowPos(NULL,0,0,640,480,SWP_NOMOVE);
+	pWnd->SetWindowPos(NULL,0,0,320,240,SWP_NOMOVE);
 
+	CheckRadioButton(IDC_RADIO1,IDC_RADIO2,IDC_RADIO1);
+	
 	m_rectTracker.m_nStyle=CRectTracker::resizeOutside|CRectTracker::dottedLine;
 	/*m_rect.left=0;
 	m_rect.top=0;
@@ -131,67 +139,121 @@ void CdentTestDlg::OnLButtonDown(UINT nFlags, CPoint point)
 	ScreenToClient(&rectBox);
 
 	BOOL bIn = PtInRect(&rectBox,point);
-	if (bIn)		//在控件内才执行
+	if (!bIn)  //在控件内才执行
 	{
-		int nRet = m_rectTracker.HitTest(point);
+		//MessageBox(_T("不要超出图像区域，谢谢！"));
+		Invalidate();
+		UpdateWindow();
+		CClientDC dc(this);
+		HBRUSH hBrush=(HBRUSH)GetStockObject(NULL_BRUSH);
+		HBRUSH oldBrush=(HBRUSH )dc.SelectObject(hBrush);
+		HPEN hPen = CreatePen(PS_SOLID,1 , RGB( 255 , 0 , 0 ));
+		HPEN oldPen = (HPEN)GetStockObject(NULL_PEN);
 
-		if ( nRet < 0) //不在原有橡皮筋矩形框内，重画
+		dc.SelectObject(hPen);
+		dc.SelectObject(hBrush);
+		CRect rect = m_rectTracker.m_rect;
+		//m_rectTracker.Draw(&dc);
+		if (!m_auto)	dc.Ellipse(m_rectTracker.m_rect);
+
+		DeleteObject(hBrush);
+		DeleteObject(hPen);
+		return;
+	}
+	//if (m_auto == TRUE)	// 自动测量
+	
+	int nRet = m_rectTracker.HitTest(point);
+
+	if ( nRet < 0) //不在原有橡皮筋矩形框内，重画
+	{
+		Invalidate(TRUE);
+		m_rectTracker.TrackRubberBand(this,point,FALSE);  //TrackRubberBand方法也是用于画外框.该方法会屏蔽掉父窗口的LButtonUp消息，即不响应父窗口的消息。
+
+		CClientDC dc(this);
+		HBRUSH hBrush=(HBRUSH)GetStockObject(NULL_BRUSH);
+		HBRUSH oldBrush=(HBRUSH )dc.SelectObject(hBrush);
+		HPEN hPen = CreatePen(PS_SOLID,1 , RGB( 255 , 0 , 0 ));
+		HPEN oldPen = (HPEN)GetStockObject(NULL_PEN);
+
+		dc.SelectObject(hPen);
+		dc.SelectObject(hBrush);
+		CRect rect = m_rectTracker.m_rect;
+		m_rectTracker.Draw(&dc);
+		if (!m_auto)	dc.Ellipse(m_rectTracker.m_rect);
+
+		DeleteObject(hBrush);
+		DeleteObject(hPen);
+	}
+	else 
+	{
+		if (nRet == CRectTracker::hitMiddle)//只有当鼠标在中间按下,才限制鼠标移动区域
 		{
-			Invalidate(TRUE);
-			m_rectTracker.TrackRubberBand(this,point,FALSE);
+			POINT pos;
+			GetCursorPos(&pos);
+			ScreenToClient(&pos);
+
+			CRect rect;
+			CWnd *pWnd = GetDlgItem(IDC_PICTURE);
+			pWnd->GetWindowRect(&rect);
+			ScreenToClient(&rect);
+
+			CRect rectRubber = m_rectTracker.m_rect;
+
+			rect.left += pos.x - rectRubber.left;
+			rect.top  += pos.y - rectRubber.top;
+			rect.right-=rectRubber.right-pos.x;
+			rect.bottom-=rectRubber.bottom-pos.y;
+
+			ClientToScreen(rect);
+			ClipCursor(&rect);
+
+		}else//在调整矩形时也不能调整到外面去.
+		{
+			CRect rect;
+			CWnd *pWnd = GetDlgItem(IDC_PICTURE);
+			pWnd->GetWindowRect(&rect);
+			ClipCursor(&rect);
+		}
+
+
+		if (m_rectTracker.Track(this,point,FALSE,NULL)) //Track方法用于拉伸已经画好的外框的大小。
+		{
+			InvalidateRect(rectBox);
+			UpdateWindow();
 
 			CClientDC dc(this);
+
+			HBRUSH hBrush=(HBRUSH)GetStockObject(NULL_BRUSH);
+			HBRUSH oldBrush=(HBRUSH )dc.SelectObject(hBrush);
+			HPEN hPen = CreatePen(PS_SOLID,1 , RGB( 255 , 0 , 0 ));
+			HPEN oldPen = (HPEN)GetStockObject(NULL_PEN);
+
+			dc.SelectObject(hPen);
+			dc.SelectObject(hBrush);
+			CRect rect = m_rectTracker.m_rect;
 			m_rectTracker.Draw(&dc);
+			if (!m_auto)	dc.Ellipse(m_rectTracker.m_rect);
+
+			DeleteObject(hBrush);
+			DeleteObject(hPen);
+
+			ClipCursor(NULL);
 		}
-		else 
-		{
-			if (nRet == CRectTracker::hitMiddle)//只有当鼠标在中间按下,才限制鼠标移动区域
-			{
-				POINT pos;
-				GetCursorPos(&pos);
-				ScreenToClient(&pos);
 
-				CRect rect;
-				CWnd *pWnd = GetDlgItem(IDC_PICTURE);
-				pWnd->GetWindowRect(&rect);
-				ScreenToClient(&rect);
-
-				CRect rectRubber = m_rectTracker.m_rect;
-
-				rect.left += pos.x - rectRubber.left;
-				rect.top  += pos.y - rectRubber.top;
-				rect.right-=rectRubber.right-pos.x;
-				rect.bottom-=rectRubber.bottom-pos.y;
-
-				ClientToScreen(rect);
-				ClipCursor(&rect);
-
-			}else//在调整矩形时也不能调整到外面去.
-			{
-				CRect rect;
-				CWnd *pWnd = GetDlgItem(IDC_PICTURE);
-				pWnd->GetWindowRect(&rect);
-				ClipCursor(&rect);
-			}
-
-			
-			if (m_rectTracker.Track(this,point,FALSE,NULL))
-			{
-				InvalidateRect(rectBox);
-				UpdateWindow();
-				CClientDC dc(this);
-				CRect rect = m_rectTracker.m_rect;
-				m_rectTracker.Draw(&dc);
-				ClipCursor(NULL);
-			}
-
-		}
 	}
 
+	m_diameter = 0.00L;
+	if (!m_auto)
+	{
+		long diameter = (m_rectTracker.m_rect.bottom + m_rectTracker.m_rect.right - m_rectTracker.m_rect.top - m_rectTracker.m_rect.left)/2;
+		m_diameter = m_accuracy*diameter;
+		UpdateData(FALSE);
+		return;
+	}
 	//生成ROI
 	CRect BoxRectInClient,rect;
 	//CvRect rectRoi;		//图像ROI，相对于图像自身的原点坐标
-	
+
 	rect = m_rectTracker.m_rect;//橡皮筋的m_rect 的坐标原点是客户区坐标原点
 	GetDlgItem(IDC_PICTURE)->GetWindowRect(&BoxRectInClient);
 	ScreenToClient(&BoxRectInClient);
@@ -201,11 +263,7 @@ void CdentTestDlg::OnLButtonDown(UINT nFlags, CPoint point)
 
 	m_rectRoi.width = rect.right - rect.left;
 	m_rectRoi.height = rect.bottom - rect.top;
-
-	//cvSetImageROI(m_srcImg,rectRoi);
-	//cvRectangle(m_srcImg,cvPoint(rectRoi.x,rectRoi.y),cvPoint(rectRoi.x+rectRoi.width,rectRoi.y + rectRoi.height),CV_RGB(255,0,0));
-	//Invalidate();
-
+	
 	CDialogEx::OnLButtonDown(nFlags, point);
 }
 
@@ -237,7 +295,7 @@ void CdentTestDlg::OnBnClickedLoadpic()
 	char *ptxtTemp =new char[len +1];  
 	WideCharToMultiByte(CP_ACP,0,mPath,-1,ptxtTemp,len,NULL,NULL );  
 
-	m_srcImg = cvLoadImage(ptxtTemp, CV_LOAD_IMAGE_GRAYSCALE );    // 读取图片
+	m_srcImg = cvLoadImage(ptxtTemp, CV_LOAD_IMAGE_COLOR );    // 读取图片
 	if( !m_srcImg )                                    // 判断是否成功载入图片
 		return;
 	if( m_dstImg )                                // 对上一幅显示的图片数据清零
@@ -271,6 +329,7 @@ void CdentTestDlg::OnBnClickedLoadpic()
 void CdentTestDlg::OnBnClickedMeasure()
 {
 	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
+	if (!m_auto)	return;
 	action();
 }
 
@@ -302,7 +361,7 @@ void CdentTestDlg::action()
 	// **************   参数定义  *******************//
 	// Local iconic variables
 	//HImage ho_Image;
-	HObject /* ho_Image,*/ ho_GaussFilter1, ho_GaussFilter2;
+	HObject  ho_Image, ho_GaussFilter1, ho_GaussFilter2;
 	HObject  ho_Filter, ho_ImageFFT, ho_ImageConvol, ho_ImageFiltered;
 	HObject  ho_ImageResult, ho_RegionDynThresh, ho_ConnectedRegions;
 	HObject  ho_SelectedRegions, ho_RegionUnion, ho_RegionClosing;
@@ -318,14 +377,27 @@ void CdentTestDlg::action()
 
 	//  ***********  算法从这里开始 ****************  //
 	//读取图片
+	IplImage *grayImg = cvCreateImage(cvSize(m_srcImg->width,m_srcImg->height),IPL_DEPTH_8U,1);
+	cvCvtColor(m_srcImg,grayImg,CV_RGB2GRAY);
 
-	cvSetImageROI(m_srcImg,m_rectRoi);
-	IplImage * cvImg = cvCreateImage(cvSize(m_srcImg->roi->width,m_srcImg->roi->height),IPL_DEPTH_8U,1);
-	cvCopy(m_srcImg,cvImg);
-	cvResetImageROI(m_srcImg);
-	HImage ho_Image("byte",cvImg->width,cvImg->height,cvImg->imageData);
+	cvSetImageROI(grayImg,m_rectRoi);
+	IplImage * pImage = cvCreateImage(cvSize(grayImg->roi->width,grayImg->roi->height),IPL_DEPTH_8U,1);
+	cvCopy(grayImg,pImage);
+	cvResetImageROI(grayImg);
+
+	int height=pImage->height;
+	int width=pImage->width;
+	uchar *dataGray=new uchar[width*height];
+	for(int i=0; i<height; i++)
+	{
+		memcpy(dataGray+width*i, pImage->imageData+pImage->widthStep*i,width);
+	}
+	GenImage1(&ho_Image,"byte",pImage->width,pImage->height,(Hlong)(dataGray));
+	delete[ ] dataGray;
+
+	//HImage ho_Image("byte",cvImg->width,cvImg->height,cvImg->imageData);
 	//ReadImage(&ho_Image, "C:/Users/lenovo/Desktop/压痕20160423/测试4/孔4.bmp");
-
+	cvShowImage("roi",pImage);
 	//获取图片尺寸
 	GetImageSize(ho_Image, &hv_Width, &hv_Height);
 
@@ -388,6 +460,15 @@ void CdentTestDlg::action()
 	AreaCenter(ho_SelectedRegions1, &hv_Area, &hv_Row, &hv_Column);
 	//挑选出压痕区域（打算根据压痕部分的中心点坐标来判断，即在放置样品时，使压痕处于中心，这样便可比较疑似压痕区域的中心点坐标是否处于图像中心，判断它是不是压痕）
 	
+	HTuple hv_num1;
+	CountObj(ho_SelectedRegions1,&hv_num1);
+	if (hv_num1.L() == 0)
+	{
+		MessageBox(_T("自动测试失败."));
+		m_rectRoi = cvRect(0,0,0,0);
+		return;
+	}
+
 	int center_x = m_rectRoi.width/2;
 	int center_y = m_rectRoi.height/2;
 	int index = 0;
@@ -407,6 +488,15 @@ void CdentTestDlg::action()
 
 	SelectObj(ho_SelectedRegions1, &ho_ObjectSelected, index+1);
 
+	HTuple hv_num2;
+	CountObj(ho_SelectedRegions1,&hv_num2);
+	if (hv_num2.L() == 0)
+	{
+		MessageBox(_T("自动测试失败."));
+		m_rectRoi = cvRect(0,0,0,0);
+		return;
+	}
+
 	//下面这两句是圆拟合
 	//根据得到的压痕区域，提取他的边缘轮廓
 	GenContourRegionXld(ho_ObjectSelected, &ho_Contours, "border");
@@ -415,12 +505,14 @@ void CdentTestDlg::action()
 		&hv_Radius, &hv_StartPhi, &hv_EndPhi, &hv_PointOrder);
 
 	//在图像上画出拟合的圆
-	//GenCircle(&ho_Circle, hv_Row1, hv_Column1, hv_Radius);
+	GenCircle(&ho_Circle, hv_Row1, hv_Column1, hv_Radius);
 
-	cvCircle(m_srcImg,cvPoint(m_rectRoi.y + hv_Row1[0].D(),m_rectRoi.x + hv_Column1[0].D()),hv_Radius[0].D(),CV_RGB(255,0,0));
+	m_diameter = 2*hv_Radius[0].D()*m_accuracy;
+	cvCircle(m_srcImg, cvPoint(m_rectRoi.x + hv_Column1[0].D(),m_rectRoi.y + hv_Row1[0].D()),hv_Radius[0].D(),CV_RGB(255,0,0));
 
-	OnPaint();
 	m_rectRoi = cvRect(0,0,0,0);
+	OnPaint();
+	UpdateData(FALSE);
 }
 
 void CdentTestDlg::OnEnKillfocusEdit1()
@@ -430,4 +522,18 @@ void CdentTestDlg::OnEnKillfocusEdit1()
 	CString str;
 	str.Format(_T("%f"),m_accuracy);
 	MessageBox(str);
+}
+
+
+void CdentTestDlg::OnBnClickedRadio1()
+{
+	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
+	m_auto = TRUE;
+}
+
+
+void CdentTestDlg::OnBnClickedRadio2()
+{
+	// TODO: ÔÚ´ËÌí¼Ó¿Ø¼þÍ¨Öª´¦Àí³ÌÐò´úÂë
+	m_auto = FALSE;
 }

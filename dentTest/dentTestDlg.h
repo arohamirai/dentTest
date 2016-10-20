@@ -36,6 +36,8 @@ private:
 private:
 	CvRect m_rectRoi;		//图像ROI，相对于图像自身的原点坐标
 	float m_accuracy;
+	float m_diameter;
+	BOOL m_auto;
 // 实现
 protected:
 	HICON m_hIcon;
@@ -51,4 +53,7 @@ public:
 	afx_msg void OnBnClickedLoadpic();
 	afx_msg void OnBnClickedMeasure();
 	afx_msg void OnEnKillfocusEdit1();
+	
+	afx_msg void OnBnClickedRadio1();
+	afx_msg void OnBnClickedRadio2();
 };
